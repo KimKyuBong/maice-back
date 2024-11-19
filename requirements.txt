@@ -1,0 +1,12 @@
+fastapi==0.104.1
+uvicorn==0.24.0
+sqlalchemy==2.0.23
+python-multipart==0.0.6
+python-dotenv==1.0.0
+openai==1.54.3  # 현재 설치된 버전으로 업데이트
+Pillow==10.1.0
+pydantic==2.5.2
+aiosqlite==0.20.0  # 현재 설치된 버전으로 업데이트
+pydantic-settings==2.2.1  # 현재 설치된 버전으로 업데이트
+aiofiles==24.1.0  # 현재 설치된 버전으로 업데이트
+aiohttp==3.10.10  # 현재 설치된 버전으로 업데이트
