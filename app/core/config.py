@@ -1,40 +1,56 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
-import os
+from functools import lru_cache
+from pathlib import Path
+
+# 기본 디렉토리 설정
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
-    # API 설정
-    API_V1_STR: str = "/api"
-    PROJECT_NAME: str = "MAICE"
-    
-    # SQLite 데이터베이스 설정
-    SQLITE_DB: str = "sql_app.db"
+    # 기본 경로 설정
+    BASE_DIR: Path = BASE_DIR
+    UPLOAD_DIR: Path = BASE_DIR / "uploads"
     
     # OpenAI 설정
-    OPENAI_API_KEY: Optional[str] = None
-    OPENAI_ORG_ID: Optional[str] = None
+    OPENAI_API_KEY: str
+
+    # 보안 설정
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+
+    # 디버그 설정
+    DEBUG: bool = True
+
+    # Redis 설정
+    REDIS_URL: str = "redis://localhost:6379"
+    REDIS_PREFIX: str = "maice:"
     
-    # 추가 설정
-    SECRET_KEY: str = "your-secret-key-here"  # 비밀 키
-    ALGORITHM: str = "HS256"  # 알고리즘
-    DEBUG: bool = True  # 디버그 모드
+    # 세션 설정
+    SESSION_EXPIRE_HOURS: int = 24
+    COOKIE_SECURE: bool = False
     
-    # 경로 설정
-    BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    UPLOAD_DIR: str = os.path.join(BASE_DIR, "uploads")
-    
-    # Redis 설정 추가
+    # Redis 상세 설정
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
-    SESSION_EXPIRE: int = 3600  # 세션 만료 시간 (1시간)
-    
+    REDIS_PASSWORD: str = ""
+    REDIS_SSL: bool = False
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        
+        @classmethod
+        def parse_env_var(cls, field_name: str, raw_val: str):
+            if field_name in ["BASE_DIR", "UPLOAD_DIR"]:
+                return Path(raw_val)
+            return raw_val
 
-# 설정 인스턴스 생성
-settings = Settings()
+@lru_cache()
+def get_settings():
+    settings = Settings()
+    # 업로드 디렉토리 생성
+    settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    return settings
 
-# uploads 디렉토리 생성
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+settings = get_settings()

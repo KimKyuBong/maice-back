@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 import logging
 import asyncio
@@ -31,9 +31,12 @@ from app.schemas.analysis import (
     TextExtractionResponse
 )
 from app.schemas.grading import (
-    GradingResponse,
+    GradingSummary,
     GradingRequest,
-    GradingListResponse
+    GradingData,
+    DetailedScoreResponse,
+    GradingListResponse,
+    DetailedCriteriaResponse
 )
 from app.schemas.criteria import (
     CriteriaInfo,
@@ -76,7 +79,7 @@ async def process_single_grading(
                 db=db
             )
             
-            # 3. 채점 수행 (grading 생성, id 자동 생성)
+            # 3. 채 수행 (grading 생성, id 자동 생성)
             grading = await grading_service.create_grading(
                 student_id=student_id,
                 problem_key=problem_key,
@@ -125,7 +128,7 @@ async def create_submission(
             relative_path = await save_uploaded_file(
                 file=file,
                 student_id=student_id,
-                problem_type=problem_key,
+                problem_key=problem_key,
                 upload_dir=Path(settings.UPLOAD_DIR)
             )
             logger.info(f"파일 저장 완료: {relative_path}")
@@ -186,7 +189,7 @@ async def create_batch_submission(
             relative_path = await save_uploaded_file(
                 file=file,
                 student_id=student_id,
-                problem_type=problem_key,
+                problem_key=problem_key,
                 upload_dir=Path(settings.UPLOAD_DIR)
             )
 
@@ -213,7 +216,7 @@ async def create_batch_submission(
                 logger.error(f"{problem_key} 처리 중 오류 발생: {str(result)}")
                 responses.append(SubmissionResponse(
                     success=False,
-                    message=f"{problem_key} 처리 실패",
+                    message=f"{problem_key} 처리 패",
                     data={"extractions": [], "gradings": []}
                 ))
             else:
@@ -244,97 +247,79 @@ async def get_ocr_result(submission_id: int, db: AsyncSession) -> Optional[TextE
     return extraction
 
 @router.post("/ocr", response_model=OCRResponse)
-async def process_ocr(
+async def extract_text(
     solution_image: UploadFile = File(...),
-    problem_type: str = Form(...),
     student_id: str = Form(...),
+    problem_key: str = Form(...),
     db: AsyncSession = Depends(get_db),
     ocr_service: OCRService = Depends(get_ocr_service)
-):
+) -> OCRResponse:
+    """이미지에서 텍스트 추출"""
     try:
-        logger.info(f"=== OCR 처리 시작 ===")
-        logger.info(f"학생 ID: {student_id}")
-        logger.info(f"문제 유형: {problem_type}")
-        logger.info(f"파일명: {solution_image.filename}")
-
+        logger.info(f"OCR 요청 시작 - 학생: {student_id}, 문제: {problem_key}")
+        
         # 1. 파일 저장
         relative_path = await save_uploaded_file(
             file=solution_image,
             student_id=student_id,
-            problem_type=problem_type,
+            problem_key=problem_key,
             upload_dir=Path(settings.UPLOAD_DIR)
         )
-        full_path = str(Path(settings.UPLOAD_DIR) / relative_path)
-        logger.info(f"파일 저장 완료: {full_path}")
+        full_path = os.path.join(settings.UPLOAD_DIR, relative_path)
         
-        # 2. Submission 생성 및 저장
+        # 2. Submission 생성
         submission = models.StudentSubmission(
             student_id=student_id,
-            problem_key=problem_type,
+            problem_key=problem_key,
             file_name=solution_image.filename,
-            image_path=relative_path,
+            image_path=str(relative_path),
             file_size=os.path.getsize(full_path),
             mime_type=solution_image.content_type
         )
         db.add(submission)
-        await db.flush()  # submission.id 생성
+        await db.flush()
         logger.info(f"Submission 생성 완료 - ID: {submission.id}")
-        
+
         # 3. OCR 분석
-        ocr_result = await ocr_service.analyze_image(
+        extraction = await ocr_service.analyze_image(
             student_id=student_id,
-            problem_type=problem_type,
-            image_path=full_path,
+            image_path=str(relative_path),
+            problem_key=problem_key,
             submission_id=submission.id,
             db=db
         )
-        logger.info(f"OCR 분석 완료 - Extraction ID: {ocr_result.id}")
         
-        # 4. 명시적 커밋
         await db.commit()
-        logger.info(f"데이터베이스 커밋 완료")
-        
-        # 5. 저장 확인
-        async with db.begin():
-            # Submission 확인
-            saved_submission = await db.get(models.StudentSubmission, submission.id)
-            logger.info(f"저장된 Submission 확인: {saved_submission is not None}")
-            
-            # OCR 결과 확인
-            stmt = select(models.TextExtraction).where(
-                models.TextExtraction.submission_id == submission.id
-            )
-            result = await db.execute(stmt)
-            saved_extraction = result.scalar_one_or_none()
-            logger.info(f"저장된 OCR 결과 확인: {saved_extraction is not None}")
-        
-        logger.info(f"=== OCR 처리 완료 ===")
+        logger.info(f"OCR 처리 완료 - Submission ID: {submission.id}")
         
         return OCRResponse(
             success=True,
-            submission_id=submission.id,
-            extracted_text=ocr_result.extracted_text,
-            message="OCR 분석이 완료되었습니다."
+            message="텍스트 추출 성공",
+            data={
+                "submission_id": submission.id,
+                "extracted_text": extraction.extracted_text,
+                "problem_key": problem_key,
+                "student_id": student_id
+            }
         )
 
     except Exception as e:
-        logger.error(f"OCR 처리 중 오류 발생: {str(e)}", exc_info=True)
         await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"OCR 처리 중 오류 발생: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
-@router.post("/grade/{submission_id}")
+@router.post("/grade/{submission_id}", response_model=GradingSummary)
 async def process_grading(
     submission_id: int,
     request: GradingRequest,
     db: AsyncSession = Depends(get_db),
+    ocr_service: OCRService = Depends(get_ocr_service),
     grading_service: GradingService = Depends(get_grading_service)
-):
+) -> GradingSummary:
     try:
-        logger.info(f"=== 채점 처리 시작 ===")
-        logger.info(f"Submission ID: {submission_id}")
-        logger.info(f"편집된 텍스트 여부: {bool(request.edited_text)}")
-        logger.info(f"채점 기준 여부: {bool(request.grading_criteria)}")
-
         async with db.begin():
             # Submission 조회
             stmt = select(models.StudentSubmission).where(
@@ -343,13 +328,7 @@ async def process_grading(
             result = await db.execute(stmt)
             submission = result.scalar_one_or_none()
             
-            if submission:
-                logger.info("Submission 조회 성공:")
-                logger.info(f"- ID: {submission.id}")
-                logger.info(f"- 학생 ID: {submission.student_id}")
-                logger.info(f"- 문제 키: {submission.problem_key}")
-                logger.info(f"- 이미지 경로: {submission.image_path}")
-            else:
+            if not submission:
                 logger.error(f"Submission을 찾을 수 없음 (ID: {submission_id})")
                 raise HTTPException(
                     status_code=404, 
@@ -363,12 +342,7 @@ async def process_grading(
             result = await db.execute(stmt)
             ocr_result = result.scalar_one_or_none()
             
-            if ocr_result:
-                logger.info("OCR 결과 조회 성공:")
-                logger.info(f"- ID: {ocr_result.id}")
-                logger.info(f"- Submission ID: {ocr_result.submission_id}")
-                logger.info(f"- 추출된 텍스트: {ocr_result.extracted_text[:100]}...")
-            else:
+            if not ocr_result:
                 logger.error(f"OCR 결과를 찾을 수 없음 (Submission ID: {submission_id})")
                 raise HTTPException(
                     status_code=404, 
@@ -385,17 +359,56 @@ async def process_grading(
                 student_id=ocr_result.student_id,
                 problem_key=ocr_result.problem_key,
                 image_path=ocr_result.image_path,
-                grading_data=ocr_result,
-                extraction=ocr_result,
-                criteria=request.grading_criteria
+                grading_data={},
+                extraction=ocr_result
             )
+            
+            # 관계 데이터를 명시적으로 로드
+            stmt = select(models.Grading).options(
+                joinedload(models.Grading.detailed_scores)
+                .joinedload(models.DetailedScore.detailed_criteria)
+            ).where(models.Grading.id == grading.id)
+            
+            result = await db.execute(stmt)
+            grading = result.unique().scalar_one()
+            
+            # 응답 데이터 구성
+            detailed_scores = [
+                DetailedScoreResponse(
+                    detailed_criteria_id=score.detailed_criteria_id,
+                    score=score.score,
+                    feedback=score.feedback,
+                    detailed_criteria=DetailedCriteriaResponse(
+                        id=score.detailed_criteria.id,
+                        item=score.detailed_criteria.item,
+                        points=score.detailed_criteria.points,
+                        description=score.detailed_criteria.description
+                    )
+                )
+                for score in grading.detailed_scores
+            ]
 
-            await db.flush()
-            logger.info("=== 채점 처리 완료 ===")
-            return grading
+            return GradingSummary(
+                success=True,
+                message="채점이 완료되었습니다",
+                data=GradingData(
+                    id=grading.id,
+                    student_id=grading.student_id,
+                    problem_key=grading.problem_key,
+                    total_score=grading.total_score,
+                    max_score=grading.max_score,
+                    feedback=grading.feedback,
+                    created_at=grading.created_at,
+                    detailed_scores=detailed_scores
+                )
+            )
+            
+            await db.commit()
+            return response
 
     except Exception as e:
         logger.error(f"채점 중 오류 발생: {str(e)}", exc_info=True)
+        await db.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"채점 처리 중 오류가 발생했습니다: {str(e)}"
@@ -416,7 +429,7 @@ async def get_gradings(
             select(models.Grading)
             .options(
                 joinedload(models.Grading.detailed_scores)
-                .joinedload(models.DetailedScore.criteria_info)
+                .joinedload(models.DetailedScore.detailed_criteria)
             )
             .order_by(models.Grading.created_at.desc())
             .offset(offset)
@@ -454,16 +467,16 @@ async def get_gradings(
                         "detailed_criteria_id": score.detailed_criteria_id,
                         "score": score.score,
                         "feedback": score.feedback,
-                        "criteria_info": {
-                            "item": score.criteria_info.item,
-                            "description": score.criteria_info.description,
-                            "points": score.criteria_info.points
+                        "detailed_criteria": {
+                            "item": score.detailed_criteria.item,
+                            "description": score.detailed_criteria.description,
+                            "points": score.detailed_criteria.points
                         }
                     }
                     for score in grading.detailed_scores
                 ]
             }
-            grading_responses.append(GradingResponse(**grading_dict))
+            grading_responses.append(GradingSummary(**grading_dict))
         
         return GradingListResponse(
             items=grading_responses,
@@ -477,4 +490,77 @@ async def get_gradings(
         raise HTTPException(
             status_code=500,
             detail=f"채점 이력 조회 중 오류가 발생했습니다: {str(e)}"
+        )
+
+@router.get("/gradings/{grading_id}")
+async def get_grading_detail(
+    grading_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        logger.info(f"=== 채점 결과 상세 조회 시작 ===")
+        logger.info(f"채점 ID: {grading_id}")
+
+        # 채점 결과 조회
+        stmt = (
+            select(models.Grading)
+            .options(
+                joinedload(models.Grading.detailed_scores)
+                .joinedload(models.DetailedScore.detailed_criteria)
+            )
+            .where(models.Grading.id == grading_id)
+        )
+        
+        result = await db.execute(stmt)
+        grading = result.unique().scalar_one_or_none()
+        
+        if not grading:
+            logger.error(f"채점 결과를 찾을 수 없음 (ID: {grading_id})")
+            raise HTTPException(
+                status_code=404,
+                detail=f"채점 결과를 찾을 수 없습니다. (ID: {grading_id})"
+            )
+        
+        # SQLAlchemy 모델을 Pydantic 모델로 변환
+        grading_dict = {
+            "id": grading.id,
+            "student_id": grading.student_id,
+            "problem_key": grading.problem_key,
+            "submission_id": grading.submission_id,
+            "extraction_id": grading.extraction_id,
+            "extracted_text": grading.extracted_text,
+            "total_score": grading.total_score,
+            "max_score": grading.max_score,
+            "feedback": grading.feedback,
+            "grading_number": grading.grading_number,
+            "image_path": grading.image_path,
+            "created_at": grading.created_at,
+            "detailed_scores": [
+                {
+                    "detailed_criteria_id": score.detailed_criteria_id,
+                    "score": score.score,
+                    "feedback": score.feedback,
+                    "detailed_criteria": {
+                        "item": score.detailed_criteria.item,
+                        "description": score.detailed_criteria.description,
+                        "points": score.detailed_criteria.points
+                    }
+                }
+                for score in grading.detailed_scores
+            ]
+        }
+        
+        return GradingSummary(
+            success=True,
+            message="채점 결과 조회 성공",
+            data=grading_dict
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"채점 결과 조회 중 오류 발생: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"채점 결과 조회 중 오류가 발생했습니다: {str(e)}"
         )

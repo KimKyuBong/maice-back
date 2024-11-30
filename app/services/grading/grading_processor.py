@@ -2,7 +2,7 @@ import logging
 import json
 import asyncio
 from typing import Dict
-from app.schemas.analysis import TextExtractionResponse
+from app.schemas.analysis import TextExtraction
 from app.services.assistant.assistant_service import AssistantService
 from app.services.grading.grading_assistant import GradingAssistant
 
@@ -58,7 +58,7 @@ class GradingProcessor:
                 
             await asyncio.sleep(1)
 
-    async def process_grading(self, extraction: TextExtractionResponse, criteria: dict) -> Dict:
+    async def process_grading(self, extraction: TextExtraction, criteria: dict) -> Dict:
         """채점 수행 및 결과 반환"""
         try:
             logger.info(f"채점 시작 - OCR 텍스트: {extraction.extracted_text}")
@@ -78,17 +78,41 @@ class GradingProcessor:
                 await self.assistant.create_message(
                     thread_id=thread_id,
                     content=f"""
-                    학생 답안:
+                    You are a mathematics grading expert. Please grade the following student's answer according to the given criteria,
+                    and make sure to return the results using the process_grading function.
+                    IMPORTANT: Please provide all feedback messages in Korean.
+
+                    [Student's Answer]
                     {extraction.extracted_text}
 
-                    채점 기준:
-                    {json.dumps(criteria, ensure_ascii=False, indent=2)}
+                    [Grading Criteria]
+                    Total Points: {criteria['total_points']} points
+                    {criteria.get('description', '')}
+                    Correct Answer: {criteria.get('correct_answer', 'Not provided')}
 
-                    채점 기준 ID 매핑:
+                    [Detailed Grading Criteria]
                     {json.dumps(criteria_mapping, ensure_ascii=False, indent=2)}
 
-                    위 답안을 채점하고 process_grading 함수를 호출하여 결과를 반환해주세요.
-                    각 세부 평가 항목별로 구체적인 피드백을 제공해주세요.
+                    Please consider the following when grading:
+                    1. Partial points can be awarded for each detailed criterion
+                    2. Provide specific feedback in Korean (strengths and areas for improvement)
+                    3. Evaluate the solution process and logical reasoning
+                    4. Assess mathematical accuracy and clarity of expression
+
+                    Key Instructions:
+                    - Analyze each step of the student's solution
+                    - Consider both the process and the final answer
+                    - Award points based on demonstrated understanding
+                    - Provide constructive and specific feedback in Korean
+                    - Include suggestions for improvement where needed
+
+                    You MUST use the process_grading function to return the results with:
+                    - total_score: The actual points earned
+                    - max_score: The total possible points
+                    - feedback: Overall evaluation with specific comments (in Korean)
+                    - detailed_scores: Array of scores and feedback for each criterion (feedback in Korean)
+
+                    Remember: All feedback messages must be written in Korean for better understanding by Korean students and teachers.
                     """
                 )
 

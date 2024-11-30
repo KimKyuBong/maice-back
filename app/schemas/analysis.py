@@ -3,16 +3,11 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from .base import ResponseBase, TimeStampedBase
 
-# 기본 OCR 응답
-class OCRResponse(ResponseBase):
-    submission_id: int
-    extracted_text: str
-    message: str
+# OCR 관련 응답
+class OCRResponse(ResponseBase[Dict[str, Any]]):
+    """OCR 분석 응답"""
+    pass
 
-    class Config:
-        from_attributes = True
-
-# 텍스트 추출 관련
 class SolutionStep(BaseModel):
     step_number: int
     content: str
@@ -29,31 +24,25 @@ class TextExtraction(TimeStampedBase):
     extracted_text: str
     image_path: str
     solution_steps: str
-
-    class Config:
-        from_attributes = True
-
-class TextExtractionResponse(BaseModel):
-    id: int
-    extracted_text: str
-    solution_steps: Optional[List[Dict]] = []
-    student_id: str
-    problem_key: str
-    image_path: str
-    extraction_number: int
     submission_id: int
 
     class Config:
         from_attributes = True
 
-# 분석 결과 응답
-class MultipleExtractionResult(BaseModel):
-    results: List[TextExtractionResponse]
-    gradings: List[Dict[str, Any]]  # GradingResponse 타입 대신 Dict 사용하여 순환 참조 방지
+class TextExtractionResponse(ResponseBase[Dict[str, Any]]):
+    """텍스트 추출 응답"""
+    pass
+
+class MultipleExtractionResult(ResponseBase[Dict[str, Any]]):
+    """다중 추출 결과"""
+    results: List[Dict[str, Any]]
+    gradings: List[Dict[str, Any]]
     count: int
 
-class ImageAnalysisResponse(ResponseBase):
-    content: Optional[MultipleExtractionResult] = None
+class ImageAnalysisResponse(ResponseBase[Dict[str, Any]]):
+    """이미지 분석 응답"""
+    pass
 
-class ImageProcessingResponse(ResponseBase):
-    data: Optional[Dict[str, Any]] = None
+class ImageProcessingResponse(ResponseBase[Dict[str, Any]]):
+    """이미지 처리 응답"""
+    pass

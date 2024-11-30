@@ -1,91 +1,22 @@
-from .base import ResponseBase, TimeStampedBase
-from .student import StudentBase, StudentCreate, StudentResponse
-from .submission import (
-    StudentSubmissionBase, 
-    StudentSubmissionCreate, 
-    StudentSubmissionResponse
-)
-from .analysis import (
-    OCRResponse,
-    TextExtraction,
-    TextExtractionResponse,
-    SolutionStep,
-    Expression,
-    ImageAnalysisResponse,
-    ImageProcessingResponse,
-    MultipleExtractionResult
-)
-from .criteria import (
-    CriteriaInfo,
-    DetailedScore,
-    DetailedCriteriaBase,
-    DetailedCriteriaCreate,
-    DetailedCriteriaResponse,
-    GradingCriteriaBase,
-    GradingCriteriaCreate,
-    GradingCriteriaResponse,
-    GradingCriteria
-)
-from .grading import (
-    GradingResponse,
-    GradingRequest,
-    GradingListResponse
-)
-from .evaluation import (
-    StudentSolutions,
-    SolutionDetail,
-    RatingDetail,
-    EvaluationResponse
-)
+import os
+import importlib
+from pathlib import Path
+
+# 현재 디렉토리의 모든 .py 파일 조회
+current_dir = Path(__file__).parent
+py_files = [
+    f.stem for f in current_dir.glob("*.py")
+    if f.is_file() and f.stem != "__init__"
+]
+
+# 동적으로 모든 모듈 import하고 public 클래스들 가져오기
+for module_name in py_files:
+    module = importlib.import_module(f".{module_name}", package="app.schemas")
+    # 모든 public 속성을 현재 네임스페이스로 가져오기
+    for attr in dir(module):
+        if not attr.startswith("_"):  # private이 아닌 것만 가져오기
+            globals()[attr] = getattr(module, attr)
 
 # 순환 참조 해결
+from .student import StudentResponse
 StudentResponse.update_forward_refs()
-GradingResponse.update_forward_refs()
-
-__all__ = [
-    # Base schemas
-    "ResponseBase",
-    "TimeStampedBase",
-    
-    # Student schemas
-    "StudentBase",
-    "StudentCreate",
-    "StudentResponse",
-    
-    # Submission schemas
-    "StudentSubmissionBase",
-    "StudentSubmissionCreate",
-    "StudentSubmissionResponse",
-    
-    # Analysis & OCR schemas
-    "OCRResponse",
-    "TextExtraction",
-    "TextExtractionResponse",
-    "SolutionStep",
-    "Expression",
-    "ImageAnalysisResponse",
-    "ImageProcessingResponse",
-    "MultipleExtractionResult",
-    
-    # Criteria schemas
-    "CriteriaInfo",
-    "DetailedScore",
-    "DetailedCriteriaBase",
-    "DetailedCriteriaCreate",
-    "DetailedCriteriaResponse",
-    "GradingCriteriaBase",
-    "GradingCriteriaCreate",
-    "GradingCriteriaResponse",
-    "GradingCriteria",
-    
-    # Grading schemas
-    "GradingResponse",
-    "GradingRequest",
-    "GradingListResponse",
-    
-    # Evaluation schemas
-    "StudentSolutions",
-    "SolutionDetail",
-    "RatingDetail",
-    "EvaluationResponse"
-]

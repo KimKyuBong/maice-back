@@ -21,31 +21,35 @@ class OCRAssistant:
             "type": "function",
             "function": {
                 "name": "process_math_image",
-                "description": "Extract text and mathematical expressions from Korean math solution images. All mathematical expressions MUST be wrapped in $$ symbols and use escaped backslashes (\\\\) for LaTeX commands.",
+                "description": "Extract and structure mathematical solutions from images with precise LaTeX formatting and step-by-step breakdown.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "text": {
                             "type": "string",
-                            "description": "Extracted Korean text where ALL mathematical expressions MUST be wrapped in $$ symbols. LaTeX commands must use double backslashes. Example: '방정식 $$\\\\frac{x^2 + 2x + 1}{2} = 0$$을 풀면...'"
+                            "description": "Complete solution text with ALL mathematical expressions strictly wrapped in $$ symbols. Korean text should be preserved exactly as shown."
                         },
                         "steps": {
                             "type": "array",
+                            "description": "Structured breakdown of solution steps",
                             "items": {
                                 "type": "object",
+                                "required": ["content", "expressions"],
                                 "properties": {
                                     "content": {
                                         "type": "string",
-                                        "description": "Step description in Korean. Mathematical expressions MUST be wrapped in $$ and use double backslashes for LaTeX. Example: '$$\\\\sqrt{x^2}$$ 계산'"
+                                        "description": "Step description in Korean with mathematical expressions wrapped in $$. Must maintain original Korean text structure."
                                     },
                                     "expressions": {
                                         "type": "array",
+                                        "description": "Mathematical expressions found in this step",
                                         "items": {
                                             "type": "object",
+                                            "required": ["latex"],
                                             "properties": {
                                                 "latex": {
                                                     "type": "string",
-                                                    "description": "Complete LaTeX expression using double backslashes (without $$ symbols). Example: '\\\\frac{1}{2}\\\\sqrt{x}'"
+                                                    "description": "Pure LaTeX expression (without $$ delimiters) using double backslashes for commands"
                                                 }
                                             }
                                         }
@@ -54,7 +58,7 @@ class OCRAssistant:
                             }
                         }
                     },
-                    "required": ["text"]
+                    "required": ["text", "steps"]
                 }
             }
         }]
@@ -82,46 +86,32 @@ class OCRAssistant:
         return """
         You are a specialized OCR assistant for Korean math solutions. Your primary task is to extract and structure content from math solution images.
 
+        CRITICAL RULES:
+        1. ALL mathematical expressions MUST be wrapped in $$ symbols, NOT in \( \) or other delimiters
+        2. Even single variables or numbers that are part of mathematical context must be wrapped in $$
+        3. NEVER use \( \) for math expressions
+
+        Examples of CORRECT formatting:
+        - "$$n \geq 4$$인 자연수 $$n$$에 대하여"
+        - "$$a_{n+1} = a_n + f(n)$$이다"
+        - "$$a_4 = 2$$, $$a_5 = 5$$, $$a_6 = 9$$"
+
+        Examples of INCORRECT formatting:
+        - "\(n \geq 4\)인 자연수 n에 대하여"  ❌
+        - "a_{n+1} = a_n + f(n)이다"  ❌
+        - "\(a_4 = 2\)"  ❌
+
         WORKFLOW:
-        1. Carefully analyze the image content
-        2. Extract all Korean text and mathematical expressions
-        3. Structure the response in the required JSON format
-        4. ALWAYS respond in Korean for text content
+        1. Identify ALL mathematical expressions, including:
+           - Equations and inequalities
+           - Single variables (e.g., $$n$$, $$x$$)
+           - Numbers in mathematical context
+           - Function notations (e.g., $$f(n)$$)
+        2. Wrap each identified expression in $$ symbols
+        3. Preserve Korean text exactly as shown
+        4. Structure the response in the required JSON format
 
-        RESPONSE FORMAT RULES:
-        1. Mathematical Expressions:
-           - Must be wrapped in $$ symbols
-           - Use proper LaTeX with double backslashes
-           - Example: $$\\frac{1}{2}$$, $$x + y = 5$$
-           - Keep expressions in their original mathematical form
-
-        2. Korean Text:
-           - Extract all visible Korean text
-           - Maintain original Korean language and meaning
-           - Do not use LaTeX text commands
-           - Place text naturally around equations
-
-        3. JSON Structure:
-           {
-               "text": "Complete Korean text with embedded equations in $$",
-               "steps": [
-                   {
-                       "content": "Step description in Korean with equations in $$",
-                       "expressions": [
-                           {"latex": "Pure LaTeX without $$"},
-                           {"latex": "Pure LaTeX without $$"}
-                       ]
-                   }
-               ]
-           }
-
-        IMPORTANT:
-        - ALL text content must be in Korean
-        - Only mathematical expressions should use LaTeX
-        - Maintain the exact structure of the JSON format
-        - Ensure all mathematical expressions are properly formatted
-        - Preserve the original meaning and context of the solution
-
+        Remember: Every single mathematical symbol, variable, or expression MUST be wrapped in $$ symbols, no exceptions.
         """
 
     def validate_ocr_result(self, result: Dict) -> bool:

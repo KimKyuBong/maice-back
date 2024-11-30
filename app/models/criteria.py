@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, Text, DateTime
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.database import Base
 
 class GradingCriteria(Base):
@@ -10,6 +11,7 @@ class GradingCriteria(Base):
     total_points = Column(Float, nullable=False)
     correct_answer = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     detailed_criteria = relationship("DetailedCriteria", back_populates="grading_criteria", cascade="all, delete-orphan", lazy="joined")
     gradings = relationship("Grading", back_populates="grading_criteria", cascade="all, delete-orphan", lazy="select")
@@ -21,6 +23,7 @@ class GradingCriteria(Base):
             "total_points": self.total_points,
             "correct_answer": self.correct_answer,
             "description": self.description,
+            "created_at": self.created_at,
             "detailed_criteria": [dc.to_dict() for dc in self.detailed_criteria]
         }
 
@@ -32,6 +35,7 @@ class DetailedCriteria(Base):
     item = Column(String, nullable=False)
     points = Column(Float, nullable=False)
     description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     grading_criteria = relationship("GradingCriteria", back_populates="detailed_criteria", lazy="joined")
     detailed_scores = relationship("DetailedScore", back_populates="detailed_criteria", cascade="all, delete-orphan", lazy="select")
@@ -41,5 +45,6 @@ class DetailedCriteria(Base):
             "id": self.id,
             "item": self.item,
             "points": self.points,
-            "description": self.description
+            "description": self.description,
+            "created_at": self.created_at
         } 

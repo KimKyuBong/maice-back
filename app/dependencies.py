@@ -4,6 +4,8 @@ from fastapi import FastAPI, Depends
 from app.services.assistant.assistant_service import AssistantService
 from app.services.analysis.ocr_service import OCRService
 from app.services.grading.grading_service import GradingService
+from app.services.grading.grading_repository import GradingRepository
+from app.services.criteria.criteria_service import CriteriaService
 from app.services.file.file_service import FileService
 from app.core.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +22,7 @@ class Services:
         self.assistant_service: Optional[AssistantService] = None
         self.ocr_service: Optional[OCRService] = None
         self.grading_service: Optional[GradingService] = None
-
+        self.criteria_service: Optional[CriteriaService] = None
 services = Services()
 
 async def init_services():
@@ -37,9 +39,18 @@ async def init_services():
         logger.info("OCR Service initialized successfully")
 
         logger.info("Initializing GradingService...")
-        services.grading_service = GradingService(services.assistant_service)
+        services.grading_repository = GradingRepository()
+        services.grading_service = GradingService(
+            repository=services.grading_repository,
+            assistant_service=services.assistant_service
+        )
         await services.grading_service.initialize()
         logger.info("GradingService initialized successfully")
+
+        logger.info("Initializing CriteriaService...")
+        services.criteria_service = CriteriaService()
+        await services.criteria_service.initialize()
+        logger.info("CriteriaService initialized successfully")
 
     except Exception as e:
         logger.error(f"Error initializing services: {e}")

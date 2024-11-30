@@ -35,24 +35,21 @@ class OCRUtils:
             logger.error(f"Cleanup error: {cleanup_error}")
 
     def format_response(self, raw_result: TextExtraction) -> TextExtractionResponse:
-        """TextExtraction 모델을 TextExtractionResponse로 변환"""
-        logger.info(f"TextExtractionResponse 생성 시작 - raw_result.id: {raw_result.id}")
-        
-        try:
-            response = TextExtractionResponse(
-                id=raw_result.id,
-                student_id=raw_result.student_id,
-                problem_key=raw_result.problem_key,
-                extracted_text=raw_result.extracted_text,
-                image_path=raw_result.image_path,
-                extraction_number=raw_result.extraction_number,
-                solution_steps=json.loads(raw_result.solution_steps) if raw_result.solution_steps else [],
-                submission_id=raw_result.submission_id
-            )
-            return response
-        except Exception as e:
-            logger.error(f"TextExtractionResponse 생성 중 오류: {str(e)}")
-            raise
+        """OCR 결과를 응답 형식으로 변환"""
+        return TextExtractionResponse(
+            success=True,
+            message="텍스트 추출 성공",
+            data={
+                "id": raw_result.id,
+                "student_id": raw_result.student_id,
+                "problem_key": raw_result.problem_key,
+                "extraction_number": raw_result.extraction_number,
+                "extracted_text": raw_result.extracted_text,
+                "solution_steps": raw_result.solution_steps,
+                "submission_id": raw_result.submission_id,
+                "created_at": raw_result.created_at.isoformat() if raw_result.created_at else None
+            }
+        )
 
     def validate_ocr_result(self, ocr_result: Dict) -> bool:
         """OCR 결과 유효성 검사"""

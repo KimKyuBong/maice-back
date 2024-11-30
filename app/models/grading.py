@@ -26,7 +26,8 @@ class DetailedScore(Base):
             "score": self.score,
             "feedback": self.feedback,
             "detailed_criteria_id": self.detailed_criteria_id,
-            "criteria_info": {
+            "detailed_criteria": {
+                "id": self.detailed_criteria.id,
                 "item": self.detailed_criteria.item,
                 "points": self.detailed_criteria.points,
                 "description": self.detailed_criteria.description

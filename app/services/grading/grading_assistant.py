@@ -63,7 +63,7 @@ class GradingAssistant:
             self.assistant = await self.assistant_service.create_assistant(
                 name="Grading Assistant",
                 description="수학 문제 답안을 채점하는 어시스턴트입니다",
-                model="gpt-4o",
+                model="gpt-4o-mini",
                 temperature=0.3,
                 tools=self.tools,
                 instructions="""

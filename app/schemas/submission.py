@@ -28,3 +28,15 @@ class SubmissionResponse(ResponseBase):
 
     class Config:
         from_attributes = True
+
+class OCRRequest(BaseModel):
+    image: str
+    problem_key: str
+
+class SubmissionListResponse(ResponseBase[List[StudentSubmissionResponse]]):
+    """제출물 목록 응답"""
+    pass
+
+class SubmissionDetailResponse(ResponseBase[StudentSubmissionResponse]):
+    """제출물 상세 응답"""
+    pass

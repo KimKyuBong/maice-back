@@ -66,58 +66,36 @@ class OCRService(BaseService):
     async def analyze_image(
         self,
         student_id: str,
-        problem_type: str,
         image_path: str,
         submission_id: int,
+        problem_key: str,
         db: AsyncSession
     ) -> TextExtraction:
         try:
             start_time = time.time()
-            logger.info(f"OCR 분석 시작 - 학생: {student_id}, 문제: {problem_type}, 이미지: {image_path}")
-
-            # 캐시 확인
-            if cached_result := await self._get_cached_result(image_path):
-                if cached_result['expires_at'] > time.time():
-                    logger.info(f"캐시된 결과 사용: {image_path}")
-                    return cached_result['result']
-                else:
-                    self._cache.pop(self._get_cache_key(image_path))  # 만료된 캐시 삭제
-
-            # assistant 초기화 확인
-            if self.assistant is None:
-                await self.initialize()
-
-            # OCR 분석 실행 (타임아웃 60초)
-            try:
-                async with timeout(60):
-                    result = await self.processor.process_image(
-                        image_path=image_path,
-                        assistant=self.assistant,
-                        student_id=student_id,
-                        problem_key=problem_type
-                    )
-                    await self._set_cached_result(image_path, result)
-            except asyncio.TimeoutError:
-                logger.error("OCR 분석 시간 초과")
-                raise HTTPException(
-                    status_code=408,
-                    detail="OCR 분석 시간이 초과되었습니다. 다시 시도해주세요."
-                )
-
+            
+            # OCR 분석 수행
+            result = await self.processor.process_image(
+                image_path=image_path,
+                assistant=self.assistant,
+                student_id=student_id,
+                problem_key=problem_key
+            )
+            
             logger.info(f"OCR 분석 완료: {time.time() - start_time:.2f}초 소요")
 
-            # OCR 결과 저장 (submission_id 포함)
-            extraction_response = await self.storage.save_result(
+            # OCR 결과 저장 (extraction 객체 직접 반환)
+            extraction = await self.storage.save_result(
                 ocr_result=result,
                 student_id=student_id,
-                problem_key=problem_type,
+                problem_key=problem_key,
                 image_path=image_path,
-                submission_id=submission_id,  # submission_id 전달
+                submission_id=submission_id,
                 db=db
             )
-            logger.info(f"OCR 결과 저장 완료 - ID: {extraction_response.id}")
             
-            return extraction_response
+            logger.info(f"OCR 결과 저장 완료 - ID: {extraction.id}")
+            return extraction
 
         except Exception as e:
             logger.error(f"OCR 분석 중 오류 발생: {str(e)}")

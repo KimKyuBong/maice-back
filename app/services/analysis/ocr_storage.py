@@ -25,7 +25,7 @@ class OCRStorage:
         image_path: str,
         submission_id: int,
         db: AsyncSession
-    ) -> TextExtractionResponse:
+    ) -> TextExtraction:
         """OCR 결과 저장"""
         try:
             # 다음 extraction_number 가져오기
@@ -50,8 +50,7 @@ class OCRStorage:
             await db.refresh(extraction)
             logger.info(f"TextExtraction 저장 완료 - ID: {extraction.id}")
             
-            # extraction 객체를 직접 전달
-            return self.utils.format_response(raw_result=extraction)  # 매개변수 이름 명시
+            return extraction
 
         except Exception as e:
             logger.error(f"Error saving OCR result: {str(e)}")

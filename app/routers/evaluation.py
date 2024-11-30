@@ -16,7 +16,6 @@ import uuid
 import os
 from app.core.config import settings
 from app.routers.submission import OCRResponse, process_single_grading
-from app.services.grading.criteria_service import CriteriaService
 from app.models import Student, StudentSubmission, TextExtraction
 import logging
 import json
@@ -34,7 +33,6 @@ logger = logging.getLogger(__name__)
 @router.post("/submit", response_model=EvaluationResponse)
 async def submit_solution(
     student_id: str = Form(...),
-    problem_type: str = Form(...),
     solution_image: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     services: Services = Depends(get_services)
@@ -45,28 +43,19 @@ async def submit_solution(
         grading_service: GradingService = services.grading_service
         
         # 1. 파일 저장
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        unique_id = str(uuid.uuid4())[:8]
-        file_extension = os.path.splitext(solution_image.filename)[1].lower()
-        unique_filename = f"{timestamp}_{unique_id}{file_extension}"
-        
-        # 상대 경로와 전체 경로 구성
-        relative_path = str(Path(student_id) / problem_type / unique_filename)
+        relative_path = await save_uploaded_file(
+            file=solution_image,
+            student_id=student_id,
+            upload_dir=Path(settings.UPLOAD_DIR)
+        )
         full_path = Path(settings.UPLOAD_DIR) / relative_path
-        
-        # 디렉토리 생성 및 파일 저장
-        full_path.parent.mkdir(parents=True, exist_ok=True)
-        content = await solution_image.read()
-        with open(full_path, "wb") as buffer:
-            buffer.write(content)
 
         # 2. DB 작업
         submission = StudentSubmission(
             student_id=student_id,
-            problem_key=problem_type,
             file_name=solution_image.filename,
             image_path=str(relative_path),
-            file_size=solution_image.size,
+            file_size=os.path.getsize(full_path),
             mime_type=solution_image.content_type
         )
         db.add(submission)
@@ -75,15 +64,14 @@ async def submit_solution(
         # 3. OCR 분석
         ocr_result = await ocr_service.analyze_image(
             student_id=student_id,
-            problem_type=problem_type,
             image_path=str(full_path),
+            submission_id=submission.id,
             db=db
         )
 
         # 4. 채점
         grading = await grading_service.create_grading(
             student_id=student_id,
-            problem_key=problem_type,
             image_path=relative_path,
             extraction=ocr_result,
             db=db
@@ -95,7 +83,7 @@ async def submit_solution(
         detailed_scores = [
             {
                 "detailed_criteria_id": score.detailed_criteria_id,
-                "criteria_info": {
+                "detailed_criteria": {
                     "item": score.detailed_criteria.item,
                     "points": score.detailed_criteria.points,
                     "description": score.detailed_criteria.description
@@ -108,7 +96,6 @@ async def submit_solution(
         
         return EvaluationResponse(
             student_id=student_id,
-            problem_key=problem_type,
             image_path=relative_path,
             extracted_text=ocr_result.extracted_text,
             extraction_number=ocr_result.extraction_number,

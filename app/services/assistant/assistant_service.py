@@ -30,7 +30,6 @@ class AssistantService(BaseService):
         try:
             client = AsyncOpenAI(
                 api_key=self.settings.OPENAI_API_KEY,
-                organization=self.settings.OPENAI_ORG_ID,
                 max_retries=3,
                 timeout=60.0,
             )

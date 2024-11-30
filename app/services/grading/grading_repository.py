@@ -1,12 +1,14 @@
 import logging
 import asyncio
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 from app import models
 from app.schemas.analysis import TextExtractionResponse
 from sqlalchemy.orm import joinedload, selectinload
 import json
+from datetime import datetime, timezone 
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -151,47 +153,24 @@ class GradingRepository:
                 extraction_id=extraction.id
             )
             
-            logger.info(f"Reference verification results: {refs}")
-            
-            if not refs["submission_exists"]:
-                raise ValueError(f"Submission {extraction.submission_id} does not exist")
-            if not refs["extraction_exists"]:
-                raise ValueError(f"TextExtraction {extraction.id} does not exist")
-            
-            if (refs["extraction_details"]["submission_id"] != 
-                refs["submission_details"]["id"]):
-                raise ValueError(
-                    f"Extraction {extraction.id} references submission "
-                    f"{refs['extraction_details']['submission_id']} but expected "
-                    f"{refs['submission_details']['id']}"
-                )
-
-            # 2. 다음 채점 번호 가져오기
-            next_number = await self._get_next_grading_number(db, student_id, problem_key)
-            
-            # 3. Grading 객체 생성
+            # 2. Grading 객체 생성
             grading = models.Grading(
                 student_id=student_id,
                 problem_key=problem_key,
                 submission_id=refs["submission_details"]["id"],
                 extraction_id=refs["extraction_details"]["id"],
                 extracted_text=extraction.extracted_text,
-                solution_steps=json.dumps(grading_data.get("solution_steps", []), ensure_ascii=False),
                 total_score=grading_data["total_score"],
                 max_score=grading_data["max_score"],
                 feedback=grading_data["feedback"],
-                grading_number=next_number,
+                grading_number=await self._get_next_grading_number(db, student_id, problem_key),
                 image_path=image_path
             )
 
-            try:
-                db.add(grading)
-                await db.flush()
-            except Exception as e:
-                logger.error(f"Failed to create grading: {str(e)}")
-                raise
+            db.add(grading)
+            await db.flush()
 
-            # 4. 세부 점수 저장
+            # 3. 세부 점수 저장
             for score_data in grading_data.get("detailed_scores", []):
                 detailed_score = models.DetailedScore(
                     grading_id=grading.id,
@@ -200,58 +179,30 @@ class GradingRepository:
                     feedback=score_data["feedback"]
                 )
                 db.add(detailed_score)
-
+            
             await db.flush()
             
-            # Eager loading으로 관계 데이터 다시 조회
+            # 4. Eager loading으로 완전한 객체 조회
             stmt = select(models.Grading).options(
-                joinedload(models.Grading.detailed_scores).joinedload(models.DetailedScore.detailed_criteria)
+                joinedload(models.Grading.detailed_scores)
+                .joinedload(models.DetailedScore.detailed_criteria),
+                joinedload(models.Grading.submission),
+                joinedload(models.Grading.extraction)
             ).where(models.Grading.id == grading.id)
             
             result = await db.execute(stmt)
-            grading = result.unique().scalar_one()
-            
-            # 모든 관계가 로드되었는지 확인
-            for score in grading.detailed_scores:
-                if not score.detailed_criteria:
-                    raise ValueError(f"DetailedCriteria not loaded for DetailedScore {score.id}")
-            
-            # 응답 데이터 구성
-            response_data = {
-                "id": grading.id,
-                "student_id": grading.student_id,
-                "problem_key": grading.problem_key,
-                "submission_id": grading.submission_id,
-                "extraction_id": grading.extraction_id,
-                "extracted_text": grading.extracted_text,
-                "solution_steps": grading.solution_steps or "",
-                "total_score": grading.total_score,
-                "max_score": grading.max_score,
-                "feedback": grading.feedback,
-                "grading_number": grading.grading_number,
-                "image_path": grading.image_path,
-                "created_at": grading.created_at,
-                "detailed_scores": [
-                    {
-                        "id": score.id,
-                        "score": score.score,
-                        "feedback": score.feedback,
-                        "detailed_criteria_id": score.detailed_criteria_id,
-                        "criteria_info": {
-                            "item": score.detailed_criteria.item,
-                            "points": score.detailed_criteria.points,
-                            "description": score.detailed_criteria.description
-                        }
-                    }
-                    for score in grading.detailed_scores
-                ]
-            }
-            
-            return response_data
+            return result.unique().scalar_one()
 
         except Exception as e:
             logger.error(f"채점 결과 저장 중 오류: {str(e)}")
             raise
+
+    def _convert_to_kr_time(self, grading: models.Grading) -> models.Grading:
+        """UTC 시간을 한국 시간으로 변환"""
+        if grading and grading.created_at:
+            kr_time = grading.created_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Asia/Seoul"))
+            grading.created_at = kr_time
+        return grading
 
     async def get_grading(
         self, 
@@ -265,4 +216,61 @@ class GradingRepository:
         ).where(models.Grading.id == grading_id)
         
         result = await db.execute(stmt)
-        return result.unique().scalar_one_or_none() 
+        grading = result.unique().scalar_one_or_none()
+        return self._convert_to_kr_time(grading) if grading else None
+
+    async def get_gradings(
+        self,
+        db: AsyncSession,
+        student_id: Optional[str] = None,
+        limit: int = 10,
+        offset: int = 0
+    ) -> List[models.Grading]:
+        """채점 이력 조회"""
+        query = select(models.Grading).options(
+            joinedload(models.Grading.detailed_scores)
+            .joinedload(models.DetailedScore.detailed_criteria),
+            joinedload(models.Grading.submission)
+        )
+        
+        if student_id:
+            query = query.filter(models.Grading.student_id == student_id)
+        
+        query = query.order_by(desc(models.Grading.created_at))
+        query = query.limit(limit).offset(offset)
+        
+        result = await db.execute(query)
+        gradings = result.scalars().unique().all()
+        return [self._convert_to_kr_time(grading) for grading in gradings]
+
+    async def get_gradings_count(
+        self,
+        db: AsyncSession,
+        student_id: Optional[str] = None
+    ) -> int:
+        """채점 이력 총 개수 조회"""
+        query = select(func.count(models.Grading.id))
+        if student_id:
+            query = query.filter(models.Grading.student_id == student_id)
+        result = await db.execute(query)
+        return result.scalar()
+
+    async def get_grading_detail(
+        self,
+        db: AsyncSession,
+        grading_id: int
+    ) -> Optional[models.Grading]:
+        """채점 결과 상세 조회"""
+        stmt = (
+            select(models.Grading)
+            .options(
+                joinedload(models.Grading.detailed_scores)
+                .joinedload(models.DetailedScore.detailed_criteria),
+                joinedload(models.Grading.submission),
+                joinedload(models.Grading.extraction)
+            )
+            .where(models.Grading.id == grading_id)
+        )
+        
+        result = await db.execute(stmt)
+        return result.unique().scalar_one_or_none()
