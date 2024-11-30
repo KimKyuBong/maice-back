@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str = ""
     REDIS_SSL: bool = False
 
+    # Database
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_USER: str = "maice_user"
+    POSTGRES_PASSWORD: str = "maice_password"
+    POSTGRES_DB: str = "maice_db"
+    POSTGRES_PORT: str = "5432"
+
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

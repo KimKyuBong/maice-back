@@ -7,7 +7,7 @@ import uvicorn
 import logging
 import os
 from pathlib import Path
-from app.database import create_tables, engine, Base
+from app.database import init_db, engine, Base
 from app.routers import (
     submission_router,
     grading_router,
@@ -38,16 +38,6 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # 환경 변수 확인 (선택 사항)
 if not os.getenv("OPENAI_API_KEY"):
     logger.warning("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
-
-async def init_db():
-    """데이터베이스 초기화"""
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-            logger.info("데이터베이스 테이블 생성 완료")
-    except Exception as e:
-        logger.error(f"데이터베이스 초기화 중 오류: {str(e)}")
-        raise
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
