@@ -10,3 +10,7 @@ aiosqlite==0.20.0  # 현재 설치된 버전으로 업데이트
 pydantic-settings==2.2.1  # 현재 설치된 버전으로 업데이트
 aiofiles==24.1.0  # 현재 설치된 버전으로 업데이트
 aiohttp==3.10.10  # 현재 설치된 버전으로 업데이트
+psycopg2-binary==2.9.9
+redis==5.0.1
+asyncpg==0.29.0
+email-validator==2.1.0.post1  # 이메일 검증을 위한 패키지 추가

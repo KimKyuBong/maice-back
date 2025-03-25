@@ -9,6 +9,7 @@ import logging
 from app.services.auth.auth_service import AuthService
 from app.core.config import settings
 from passlib.context import CryptContext
+from app.schemas.student import StudentUpdate, StudentResponse
 
 # 쿠키 설정
 cookie_sec = APIKeyCookie(name="session_id", auto_error=False)
@@ -26,8 +27,9 @@ pwd_context = CryptContext(
 # 로그인 요청 모델 추가
 class LoginRequest(BaseModel):
     student_id: str
+    password: str
 
-@router.get("/me")
+@router.get("/me", response_model=StudentResponse)
 async def get_current_user(
     session_id: str = Depends(cookie_sec),
     db: AsyncSession = Depends(get_db)
@@ -35,13 +37,7 @@ async def get_current_user(
     """현재 로그인한 사용자 정보 조회"""
     try:
         student = await AuthService.get_current_user(db, session_id)
-        return {
-            "status": "success",
-            "data": {
-                "student_id": student.id,
-                "created_at": student.created_at.isoformat() if student.created_at else None
-            }
-        }
+        return student
     except HTTPException:
         raise
     except Exception as e:
@@ -50,14 +46,17 @@ async def get_current_user(
 
 @router.post("/login")
 async def login(
-    student_id: str = Form(...),
-    password: str = Form(...),
+    login_data: LoginRequest,
     response: Response = None,
     db: AsyncSession = Depends(get_db)
 ):
     """로그인"""
     try:
-        student, session_id = await AuthService.login(db, student_id, password)
+        student, session_id = await AuthService.login(
+            db, 
+            login_data.student_id, 
+            login_data.password
+        )
         
         response.set_cookie(
             key="session_id",
@@ -71,10 +70,7 @@ async def login(
         return {
             "status": "success",
             "message": "로그인 성공",
-            "data": {
-                "student_id": student.id,
-                "created_at": student.created_at.isoformat() if student.created_at else None
-            }
+            "data": StudentResponse.from_orm(student)
         }
 
     except Exception as e:
@@ -83,21 +79,47 @@ async def login(
 
 @router.post("/logout")
 async def logout(
-    session_id: str = Depends(cookie_sec),
-    response: Response = None
+    response: Response = None,
+    session_id: str = Depends(cookie_sec)
 ):
     """로그아웃"""
     try:
-        if session_id:
-            await AuthService.delete_session(session_id)
-        
-        response = JSONResponse(content={
-            "status": "success",
-            "message": "로그아웃 되었습니다"
-        })
+        await AuthService.delete_session(session_id)
         response.delete_cookie(key="session_id")
-        return response
-        
+        return {"status": "success", "message": "로그아웃 성공"}
     except Exception as e:
         logger.error(f"로그아웃 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/me", response_model=StudentResponse)
+async def update_user(
+    update_data: StudentUpdate,
+    session_id: str = Depends(cookie_sec),
+    db: AsyncSession = Depends(get_db)
+):
+    """사용자 정보 업데이트"""
+    try:
+        student = await AuthService.get_current_user(db, session_id)
+        updated_student = await AuthService.update_student(
+            db, 
+            student.id, 
+            update_data
+        )
+        return updated_student
+    except Exception as e:
+        logger.error(f"사용자 정보 업데이트 중 오류 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/me")
+async def delete_user(
+    session_id: str = Depends(cookie_sec),
+    db: AsyncSession = Depends(get_db)
+):
+    """사용자 삭제"""
+    try:
+        student = await AuthService.get_current_user(db, session_id)
+        await AuthService.delete_student(db, student.id)
+        return {"status": "success", "message": "계정이 삭제되었습니다"}
+    except Exception as e:
+        logger.error(f"사용자 삭제 중 오류 발생: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, constr
 from datetime import datetime
 from typing import Dict, List, Optional
 from .grading import GradingSummary
@@ -6,12 +6,22 @@ from .base import ResponseBase
 
 class StudentBase(BaseModel):
     id: str
+    email: Optional[EmailStr] = None
+    name: Optional[str] = None
+    is_active: bool = True
 
 class StudentCreate(StudentBase):
-    pass
+    password: constr(min_length=8, max_length=100)
+
+class StudentUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    name: Optional[str] = None
+    password: Optional[constr(min_length=8, max_length=100)] = None
+    is_active: Optional[bool] = None
 
 class StudentResponse(StudentBase):
-    gradings: Optional[List[GradingSummary]] = None
+    created_at: datetime
+    last_login: Optional[datetime] = None
 
     class Config:
         from_attributes = True
